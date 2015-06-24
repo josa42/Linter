@@ -4,8 +4,9 @@ class Commands
   constructor: (@linter) ->
     @_subscriptions = new CompositeDisposable
     @_subscriptions.add atom.commands.add 'atom-workspace',
-      'linter:next-error': @nextError.bind(@)
-      'linter:toggle': @toggleLinter.bind(@)
+      'linter:next-error': @nextMessage.bind @, 'error'
+      'linter:next-warning': @nextMessage.bind @, 'warning'
+      'linter:toggle': @toggleLinter.bind @
 
     # Default values
     @_messages = null
@@ -15,9 +16,27 @@ class Commands
     return unless activeEditorLinter
     activeEditorLinter.toggleStatus()
 
-  nextError: ->
-    if not @_messages or (next = @_messages.next()).done
-      next = (@_messages = @linter.views.getMessages().values()).next()
+  # Recursive find until it matches type
+  getNextMessage: (messages, type) ->
+    next = messages.next()
+
+    # Message is done return it,
+    # avoid infinite loop through existing `@_messages`
+    #
+    # (when called from line #36)
+    return next if next.done
+
+    # Message type is correct return it
+    return next if next.value.type is type
+
+    # Let's try with the next one
+    return @getNextMessage messages, type
+
+  nextMessage: (type) ->
+    if not @_messages or (next = @getNextMessage(@_messages, type)).done
+      @_messages = @linter.views.getMessages().values()
+      next = @getNextMessage @_messages, type
+
     return if next.done # There's no errors
     message = next.value
     return unless message.filePath
